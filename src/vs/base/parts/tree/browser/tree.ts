@@ -11,10 +11,17 @@ import Mouse = require('vs/base/browser/mouseEvent');
 import Keyboard = require('vs/base/browser/keyboardEvent');
 import { INavigator } from 'vs/base/common/iterator';
 import { ScrollbarVisibility } from 'vs/base/common/scrollable';
+import Event from 'vs/base/common/event';
+import { IAction, IActionItem } from "vs/base/common/actions";
 
 export interface ITree extends Events.IEventEmitter {
 
 	emit(eventType: string, data?: any): void;
+
+	onDOMFocus: Event<void>;
+	onDOMBlur: Event<void>;
+	onHighlightChange: Event<void>;
+	onDispose: Event<void>;
 
 	/**
 	 * Returns the tree's DOM element.
@@ -328,7 +335,7 @@ export interface ITree extends Events.IEventEmitter {
 	 * Returns a navigator which allows to discover the visible and
 	 * expanded elements in the tree.
 	 */
-	getNavigator(): INavigator<any>;
+	getNavigator(fromElement?: any, subTreeOnly?: boolean): INavigator<any>;
 
 	/**
 	 * Disposes the tree
@@ -358,6 +365,11 @@ export interface IDataSource {
 	 * Returns the element's parent in a promise.
 	 */
 	getParent(tree: ITree, element: any): WinJS.Promise;
+
+	/**
+	 * Returns whether an element should be expanded when first added to the tree.
+	 */
+	shouldAutoexpand?(tree: ITree, element: any): boolean;
 }
 
 export interface IRenderer {
@@ -536,14 +548,15 @@ export interface IDragOverReaction {
 	accept: boolean;
 	effect?: DragOverEffect;
 	bubble?: DragOverBubble;
+	autoExpand?: boolean;
 }
 
-export var DRAG_OVER_REJECT: IDragOverReaction = { accept: false };
-export var DRAG_OVER_ACCEPT: IDragOverReaction = { accept: true };
-export var DRAG_OVER_ACCEPT_BUBBLE_UP: IDragOverReaction = { accept: true, bubble: DragOverBubble.BUBBLE_UP };
-export var DRAG_OVER_ACCEPT_BUBBLE_DOWN: IDragOverReaction = { accept: true, bubble: DragOverBubble.BUBBLE_DOWN };
-export var DRAG_OVER_ACCEPT_BUBBLE_UP_COPY: IDragOverReaction = { accept: true, bubble: DragOverBubble.BUBBLE_UP, effect: DragOverEffect.COPY };
-export var DRAG_OVER_ACCEPT_BUBBLE_DOWN_COPY: IDragOverReaction = { accept: true, bubble: DragOverBubble.BUBBLE_DOWN, effect: DragOverEffect.COPY };
+export const DRAG_OVER_REJECT: IDragOverReaction = { accept: false };
+export const DRAG_OVER_ACCEPT: IDragOverReaction = { accept: true };
+export const DRAG_OVER_ACCEPT_BUBBLE_UP: IDragOverReaction = { accept: true, bubble: DragOverBubble.BUBBLE_UP };
+export const DRAG_OVER_ACCEPT_BUBBLE_DOWN = (autoExpand = false) => ({ accept: true, bubble: DragOverBubble.BUBBLE_DOWN, autoExpand });
+export const DRAG_OVER_ACCEPT_BUBBLE_UP_COPY: IDragOverReaction = { accept: true, bubble: DragOverBubble.BUBBLE_UP, effect: DragOverEffect.COPY };
+export const DRAG_OVER_ACCEPT_BUBBLE_DOWN_COPY = (autoExpand = false) => ({ accept: true, bubble: DragOverBubble.BUBBLE_DOWN, effect: DragOverEffect.COPY });
 
 export interface IDragAndDropData {
 	update(event: Mouse.DragMouseEvent): void;
@@ -633,6 +646,7 @@ export interface ITreeConfiguration {
 
 export interface ITreeOptions {
 	twistiePixels?: number;
+	showTwistie?: boolean;
 	indentPixels?: number;
 	verticalScrollMode?: ScrollbarVisibility;
 	alwaysFocused?: boolean;
@@ -640,9 +654,38 @@ export interface ITreeOptions {
 	useShadows?: boolean;
 	paddingOnRow?: boolean;
 	ariaLabel?: string;
+	keyboardSupport?: boolean;
 }
 
 export interface ITreeContext extends ITreeConfiguration {
 	tree: ITree;
 	options: ITreeOptions;
+}
+
+export interface IActionProvider {
+
+	/**
+	 * Returns whether or not the element has actions. These show up in place right to the element in the tree.
+	 */
+	hasActions(tree: ITree, element: any): boolean;
+
+	/**
+	 * Returns a promise of an array with the actions of the element that should show up in place right to the element in the tree.
+	 */
+	getActions(tree: ITree, element: any): WinJS.TPromise<IAction[]>;
+
+	/**
+	 * Returns whether or not the element has secondary actions. These show up once the user has expanded the element's action bar.
+	 */
+	hasSecondaryActions(tree: ITree, element: any): boolean;
+
+	/**
+	 * Returns a promise of an array with the secondary actions of the element that should show up once the user has expanded the element's action bar.
+	 */
+	getSecondaryActions(tree: ITree, element: any): WinJS.TPromise<IAction[]>;
+
+	/**
+	 * Returns an action item to render an action.
+	 */
+	getActionItem(tree: ITree, element: any, action: IAction): IActionItem;
 }

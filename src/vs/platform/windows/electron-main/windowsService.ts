@@ -8,15 +8,24 @@
 import { TPromise } from 'vs/base/common/winjs.base';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { assign } from 'vs/base/common/objects';
+import URI from 'vs/base/common/uri';
 import { IWindowsService } from 'vs/platform/windows/common/windows';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
 import { shell, crashReporter, app } from 'electron';
 import Event, { chain } from 'vs/base/common/event';
 import { fromEventEmitter } from 'vs/base/node/event';
 import { IURLService } from 'vs/platform/url/common/url';
+import { ITelemetryData } from 'vs/platform/telemetry/common/telemetry';
 
 // TODO@Joao: remove this dependency, move all implementation to this class
+import { OpenContext } from 'vs/code/common/windows';
 import { IWindowsMainService } from 'vs/code/electron-main/windows';
+import { ILifecycleService } from "vs/code/electron-main/lifecycle";
+
+export interface ISharedProcess {
+	whenReady(): TPromise<void>;
+	toggle(): void;
+}
 
 export class WindowsService implements IWindowsService, IDisposable {
 
@@ -28,28 +37,32 @@ export class WindowsService implements IWindowsService, IDisposable {
 	onWindowFocus: Event<number> = fromEventEmitter(app, 'browser-window-focus', (_, w: Electron.BrowserWindow) => w.id);
 
 	constructor(
+		private sharedProcess: ISharedProcess,
 		@IWindowsMainService private windowsMainService: IWindowsMainService,
 		@IEnvironmentService private environmentService: IEnvironmentService,
-		@IURLService private urlService: IURLService
+		@IURLService urlService: IURLService,
+		@ILifecycleService private lifecycleService: ILifecycleService
 	) {
 		chain(urlService.onOpenURL)
 			.filter(uri => uri.authority === 'file' && !!uri.path)
-			.map(uri => uri.path)
+			.map(uri => URI.file(uri.fsPath))
 			.on(this.openFileForURI, this, this.disposables);
 	}
 
-	openFileFolderPicker(windowId: number, forceNewWindow?: boolean): TPromise<void> {
-		this.windowsMainService.openFileFolderPicker(forceNewWindow);
+	openFileFolderPicker(windowId: number, forceNewWindow?: boolean, data?: ITelemetryData): TPromise<void> {
+		this.windowsMainService.openFileFolderPicker(forceNewWindow, data);
 		return TPromise.as(null);
 	}
 
-	openFilePicker(windowId: number, forceNewWindow?: boolean, path?: string): TPromise<void> {
-		this.windowsMainService.openFilePicker(forceNewWindow, path);
+	openFilePicker(windowId: number, forceNewWindow?: boolean, path?: string, data?: ITelemetryData): TPromise<void> {
+		this.windowsMainService.openFilePicker(forceNewWindow, path, undefined, data);
 		return TPromise.as(null);
 	}
 
-	openFolderPicker(windowId: number, forceNewWindow?: boolean): TPromise<void> {
-		this.windowsMainService.openFolderPicker(forceNewWindow);
+	openFolderPicker(windowId: number, forceNewWindow?: boolean, data?: ITelemetryData): TPromise<void> {
+		const vscodeWindow = this.windowsMainService.getWindowById(windowId);
+		this.windowsMainService.openFolderPicker(forceNewWindow, vscodeWindow, data);
+
 		return TPromise.as(null);
 	}
 
@@ -92,7 +105,7 @@ export class WindowsService implements IWindowsService, IDisposable {
 		const vscodeWindow = this.windowsMainService.getWindowById(windowId);
 
 		if (vscodeWindow) {
-			this.windowsMainService.open({ cli: this.environmentService.args, forceEmpty: true, windowToUse: vscodeWindow });
+			this.windowsMainService.open({ context: OpenContext.API, cli: this.environmentService.args, forceEmpty: true, windowToUse: vscodeWindow, forceReuseWindow: true });
 		}
 
 		return TPromise.as(null);
@@ -130,6 +143,11 @@ export class WindowsService implements IWindowsService, IDisposable {
 		return TPromise.as(null);
 	}
 
+	clearRecentPathsList(): TPromise<void> {
+		this.windowsMainService.clearRecentPathsList();
+		return TPromise.as(null);
+	}
+
 	getRecentlyOpen(windowId: number): TPromise<{ files: string[]; folders: string[]; }> {
 		const vscodeWindow = this.windowsMainService.getWindowById(windowId);
 
@@ -146,6 +164,16 @@ export class WindowsService implements IWindowsService, IDisposable {
 
 		if (vscodeWindow) {
 			vscodeWindow.win.focus();
+		}
+
+		return TPromise.as(null);
+	}
+
+	isFocused(windowId: number): TPromise<boolean> {
+		const vscodeWindow = this.windowsMainService.getWindowById(windowId);
+
+		if (vscodeWindow) {
+			return TPromise.as(vscodeWindow.win.isFocused());
 		}
 
 		return TPromise.as(null);
@@ -191,22 +219,17 @@ export class WindowsService implements IWindowsService, IDisposable {
 		return TPromise.as(null);
 	}
 
-	toggleMenuBar(windowId: number): TPromise<void> {
-		this.windowsMainService.toggleMenuBar(windowId);
-		return TPromise.as(null);
-	}
-
-	windowOpen(paths: string[], forceNewWindow?: boolean): TPromise<void> {
+	openWindow(paths: string[], options?: { forceNewWindow?: boolean, forceReuseWindow?: boolean }): TPromise<void> {
 		if (!paths || !paths.length) {
 			return TPromise.as(null);
 		}
 
-		this.windowsMainService.open({ cli: this.environmentService.args, pathsToOpen: paths, forceNewWindow: forceNewWindow });
+		this.windowsMainService.open({ context: OpenContext.API, cli: this.environmentService.args, pathsToOpen: paths, forceNewWindow: options && options.forceNewWindow, forceReuseWindow: options && options.forceReuseWindow });
 		return TPromise.as(null);
 	}
 
 	openNewWindow(): TPromise<void> {
-		this.windowsMainService.openNewWindow();
+		this.windowsMainService.openNewWindow(OpenContext.API);
 		return TPromise.as(null);
 	}
 
@@ -224,6 +247,10 @@ export class WindowsService implements IWindowsService, IDisposable {
 		const windows = this.windowsMainService.getWindows();
 		const result = windows.map(w => ({ path: w.openedWorkspacePath, title: w.win.getTitle(), id: w.id }));
 		return TPromise.as(result);
+	}
+
+	getWindowCount(): TPromise<number> {
+		return TPromise.as(this.windowsMainService.getWindows().length);
 	}
 
 	log(severity: string, ...messages: string[]): TPromise<void> {
@@ -246,9 +273,8 @@ export class WindowsService implements IWindowsService, IDisposable {
 		return TPromise.as(null);
 	}
 
-	openExternal(url: string): TPromise<void> {
-		shell.openExternal(url);
-		return TPromise.as(null);
+	openExternal(url: string): TPromise<boolean> {
+		return TPromise.as(shell.openExternal(url));
 	}
 
 	startCrashReporter(config: Electron.CrashReporterStartOptions): TPromise<void> {
@@ -256,11 +282,31 @@ export class WindowsService implements IWindowsService, IDisposable {
 		return TPromise.as(null);
 	}
 
-	private openFileForURI(filePath: string): TPromise<void> {
-		const cli = assign(Object.create(null), this.environmentService.args, { goto: true });
-		const pathsToOpen = [filePath];
+	quit(): TPromise<void> {
+		this.windowsMainService.quit();
+		return TPromise.as(null);
+	}
 
-		this.windowsMainService.open({ cli, pathsToOpen });
+	relaunch(options: { addArgs?: string[], removeArgs?: string[] }): TPromise<void> {
+		this.lifecycleService.relaunch(options);
+
+		return TPromise.as(null);
+	}
+
+	whenSharedProcessReady(): TPromise<void> {
+		return this.sharedProcess.whenReady();
+	}
+
+	toggleSharedProcess(): TPromise<void> {
+		this.sharedProcess.toggle();
+		return TPromise.as(null);
+	}
+
+	private openFileForURI(uri: URI): TPromise<void> {
+		const cli = assign(Object.create(null), this.environmentService.args, { goto: true });
+		const pathsToOpen = [uri.fsPath];
+
+		this.windowsMainService.open({ context: OpenContext.API, cli, pathsToOpen });
 		return TPromise.as(null);
 	}
 

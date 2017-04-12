@@ -11,7 +11,7 @@
 			],
 			"stopOnEntry": false,
 			"sourceMaps": true,
-			"outDir": "${workspaceRoot}/client/out",
+			"outFiles": ["${workspaceRoot}/client/out/**/*.js"],
 			"preLaunchTask": "npm"
 		},
 		{
@@ -22,7 +22,7 @@
 			"args": ["--extensionDevelopmentPath=${workspaceRoot}", "--extensionTestsPath=${workspaceRoot}/client/out/test" ],
 			"stopOnEntry": false,
 			"sourceMaps": true,
-			"outDir": "${workspaceRoot}/client/out/test",
+			"outFiles": ["${workspaceRoot}/client/out/test/**/*.js"],
 			"preLaunchTask": "npm"
 		},
 		{
@@ -30,8 +30,9 @@
 			"type": "node",
 			"request": "attach",
 			"port": 6004,
+			"protocol": "legacy",
 			"sourceMaps": true,
-			"outDir": "${workspaceRoot}/server/out"
-		}		
+			"outFiles": ["${workspaceRoot}/server/out/**/*.js"]
+		}
 	]
 }

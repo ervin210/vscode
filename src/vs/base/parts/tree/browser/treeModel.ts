@@ -241,7 +241,7 @@ export class Item extends Events.EventEmitter {
 		this.userContent = null;
 		this.traits = {};
 		this.depth = 0;
-		this.expanded = false;
+		this.expanded = this.context.dataSource.shouldAutoexpand && this.context.dataSource.shouldAutoexpand(this.context.tree, element);
 
 		this.emit('item:create', { item: this });
 
@@ -644,7 +644,7 @@ export class TreeNavigator implements INavigator<Item> {
 		if (!item) {
 			return null;
 		} else {
-			if (!item.isVisible() || !item.isExpanded() || item.lastChild === null) {
+			if (!(item instanceof RootItem) && (!item.isVisible() || !item.isExpanded() || item.lastChild === null)) {
 				return item;
 			} else {
 				return TreeNavigator.lastDescendantOf(item.lastChild);
@@ -718,15 +718,7 @@ export class TreeNavigator implements INavigator<Item> {
 	}
 
 	public last(): Item {
-		if (this.start && this.start.isExpanded()) {
-			this.item = this.start.lastChild;
-
-			if (this.item && !this.item.isVisible()) {
-				this.previous();
-			}
-		}
-
-		return this.item || null;
+		return TreeNavigator.lastDescendantOf(this.start);
 	}
 }
 
@@ -848,12 +840,19 @@ export class TreeModel extends Events.EventEmitter {
 	}
 
 	public refreshAll(elements: any[], recursive: boolean = true): WinJS.Promise {
+		try {
+			this._beginDeferredEmit();
+			return this._refreshAll(elements, recursive);
+		} finally {
+			this._endDeferredEmit();
+		}
+	}
+
+	private _refreshAll(elements: any[], recursive: boolean): WinJS.Promise {
 		var promises = [];
-		this.deferredEmit(() => {
-			for (var i = 0, len = elements.length; i < len; i++) {
-				promises.push(this.refresh(elements[i], recursive));
-			}
-		});
+		for (var i = 0, len = elements.length; i < len; i++) {
+			promises.push(this.refresh(elements[i], recursive));
+		}
 		return WinJS.Promise.join(promises);
 	}
 

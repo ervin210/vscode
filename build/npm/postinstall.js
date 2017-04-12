@@ -6,6 +6,19 @@
 const cp = require('child_process');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
+function npmInstall(location) {
+	const result = cp.spawnSync(npm, ['install'], {
+		cwd: location ,
+		stdio: 'inherit'
+	});
+
+	if (result.error || result.status !== 0) {
+		process.exit(1);
+	}
+}
+
+npmInstall('extensions'); // node modules shared by all extensions
+
 const extensions = [
 	'vscode-api-tests',
 	'vscode-colorize-tests',
@@ -17,16 +30,11 @@ const extensions = [
 	'php',
 	'javascript',
 	'css',
-	'html'
+	'html',
+	'git',
+	'gulp'
 ];
 
-extensions.forEach(extension => {
-	const result = cp.spawnSync(npm, ['install'], {
-		cwd: `extensions/${extension}`,
-		stdio: 'inherit'
-	});
+extensions.forEach(extension => npmInstall(`extensions/${extension}`));
 
-	if (result.error || result.status !== 0) {
-		process.exit(1);
-	}
-});
+npmInstall(`build`); // node modules required for build

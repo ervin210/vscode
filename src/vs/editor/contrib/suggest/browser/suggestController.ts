@@ -7,6 +7,7 @@
 import * as nls from 'vs/nls';
 import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
 import { onUnexpectedError } from 'vs/base/common/errors';
+import { isFalsyOrEmpty } from 'vs/base/common/arrays';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
@@ -17,12 +18,59 @@ import { editorAction, ServicesAccessor, EditorAction, EditorCommand, CommonEdit
 import { ICodeEditor } from 'vs/editor/browser/editorBrowser';
 import { editorContribution } from 'vs/editor/browser/editorBrowserExtensions';
 import { EditOperation } from 'vs/editor/common/core/editOperation';
+import { Range } from 'vs/editor/common/core/range';
 import { CodeSnippet } from 'vs/editor/contrib/snippet/common/snippet';
 import { SnippetController } from 'vs/editor/contrib/snippet/common/snippetController';
-import { Context as SuggestContext, snippetSuggestSupport } from 'vs/editor/contrib/suggest/common/suggest';
-import { SuggestModel } from '../common/suggestModel';
-import { ICompletionItem } from '../common/completionModel';
+import { Context as SuggestContext } from './suggest';
+import { SuggestModel, State } from './suggestModel';
+import { ICompletionItem } from './completionModel';
 import { SuggestWidget } from './suggestWidget';
+
+class AcceptOnCharacterOracle {
+
+	private _disposables: IDisposable[] = [];
+
+	private _activeAcceptCharacters = new Set<string>();
+	private _activeItem: ICompletionItem;
+
+	constructor(editor: ICodeEditor, widget: SuggestWidget, accept: (item: ICompletionItem) => any) {
+
+		this._disposables.push(widget.onDidShow(() => this._onItem(widget.getFocusedItem())));
+		this._disposables.push(widget.onDidFocus(this._onItem, this));
+		this._disposables.push(widget.onDidHide(this.reset, this));
+
+		this._disposables.push(editor.onWillType(text => {
+			if (this._activeItem) {
+				const ch = text[text.length - 1];
+				if (this._activeAcceptCharacters.has(ch) && editor.getConfiguration().contribInfo.acceptSuggestionOnCommitCharacter) {
+					accept(this._activeItem);
+				}
+			}
+		}));
+	}
+
+	private _onItem(item: ICompletionItem): void {
+		if (!item || isFalsyOrEmpty(item.suggestion.commitCharacters)) {
+			this.reset();
+			return;
+		}
+		this._activeItem = item;
+		this._activeAcceptCharacters.clear();
+		for (const ch of item.suggestion.commitCharacters) {
+			if (ch.length > 0) {
+				this._activeAcceptCharacters.add(ch[0]);
+			}
+		}
+	}
+
+	reset(): void {
+		this._activeItem = undefined;
+	}
+
+	dispose() {
+		dispose(this._disposables);
+	}
+}
 
 @editorContribution
 export class SuggestController implements IEditorContribution {
@@ -58,6 +106,42 @@ export class SuggestController implements IEditorContribution {
 
 		this.widget = instantiationService.createInstance(SuggestWidget, this.editor);
 		this.toDispose.push(this.widget.onDidSelect(this.onDidSelectItem, this));
+
+		// Wire up logic to accept a suggestion on certain characters
+		const autoAcceptOracle = new AcceptOnCharacterOracle(editor, this.widget, item => this.onDidSelectItem(item));
+		this.toDispose.push(
+			autoAcceptOracle,
+			this.model.onDidSuggest(e => {
+				if (e.completionModel.items.length === 0) {
+					autoAcceptOracle.reset();
+				}
+			})
+		);
+
+		let makesTextEdit = SuggestContext.MakesTextEdit.bindTo(contextKeyService);
+		this.toDispose.push(this.widget.onDidFocus(item => {
+
+			const position = this.editor.getPosition();
+			const startColumn = item.position.column - item.suggestion.overwriteBefore;
+			const endColumn = position.column;
+			let value = true;
+			if (
+				this.model.state === State.Auto
+				&& endColumn - startColumn === item.suggestion.insertText.length
+			) {
+				const oldText = this.editor.getModel().getValueInRange({
+					startLineNumber: position.lineNumber,
+					startColumn,
+					endLineNumber: position.lineNumber,
+					endColumn
+				});
+				value = oldText !== item.suggestion.insertText;
+			}
+			makesTextEdit.set(value);
+		}));
+		this.toDispose.push({
+			dispose() { makesTextEdit.reset(); }
+		});
 	}
 
 	getId(): string {
@@ -76,42 +160,35 @@ export class SuggestController implements IEditorContribution {
 		}
 	}
 
-	private static _codeSnippetForSuggestion({suggestion}: ICompletionItem): CodeSnippet {
-		switch (suggestion.snippetType) {
-			case 'textmate': return CodeSnippet.fromTextmate(suggestion.insertText);
-			case 'internal': return CodeSnippet.fromInternal(suggestion.insertText);
-			default: return CodeSnippet.none(suggestion.insertText);
-		}
-	}
-
 	private onDidSelectItem(item: ICompletionItem): void {
 		if (item) {
-			const {suggestion, position} = item;
+			const { suggestion, position } = item;
 			const columnDelta = this.editor.getPosition().column - position.column;
 
 			if (Array.isArray(suggestion.additionalTextEdits)) {
 				this.editor.pushUndoStop();
-				this.editor.executeEdits('suggestController.additionalTextEdits', suggestion.additionalTextEdits.map(edit => EditOperation.replace(edit.range, edit.text)));
+				this.editor.executeEdits('suggestController.additionalTextEdits', suggestion.additionalTextEdits.map(edit => EditOperation.replace(Range.lift(edit.range), edit.text)));
 				this.editor.pushUndoStop();
 			}
 
-			const snippet = SuggestController._codeSnippetForSuggestion(item);
-
-			SnippetController.get(this.editor).run(
-				snippet,
-				suggestion.overwriteBefore + columnDelta,
-				suggestion.overwriteAfter
-			);
+			if (suggestion.snippetType === 'textmate') {
+				SnippetController.get(this.editor).insertSnippet(
+					suggestion.insertText,
+					suggestion.overwriteBefore + columnDelta,
+					suggestion.overwriteAfter);
+			} else {
+				SnippetController.get(this.editor).run(
+					CodeSnippet.fromInternal(suggestion.insertText),
+					suggestion.overwriteBefore + columnDelta,
+					suggestion.overwriteAfter
+				);
+			}
 
 			if (suggestion.command) {
 				this.commandService.executeCommand(suggestion.command.id, ...suggestion.command.arguments).done(undefined, onUnexpectedError);
 			}
 
-			if (item.support !== snippetSuggestSupport) {
-				this.telemetryService.publicLog('suggestSnippetInsert', {
-					hasPlaceholders: snippet.placeHolders.length > 0
-				});
-			}
+			this.telemetryService.publicLog('suggestSnippetInsert', { ...this.editor.getTelemetryData(), suggestionType: suggestion.type });
 		}
 
 		this.model.cancel();
@@ -132,6 +209,7 @@ export class SuggestController implements IEditorContribution {
 
 	cancelSuggestWidget(): void {
 		if (this.widget) {
+			this.model.cancel();
 			this.widget.hideDetailsOrHideWidget();
 		}
 	}
@@ -148,6 +226,12 @@ export class SuggestController implements IEditorContribution {
 		}
 	}
 
+	selectLastSuggestion(): void {
+		if (this.widget) {
+			this.widget.selectLast();
+		}
+	}
+
 	selectPrevSuggestion(): void {
 		if (this.widget) {
 			this.widget.selectPrevious();
@@ -157,6 +241,12 @@ export class SuggestController implements IEditorContribution {
 	selectPrevPageSuggestion(): void {
 		if (this.widget) {
 			this.widget.selectPreviousPage();
+		}
+	}
+
+	selectFirstSuggestion(): void {
+		if (this.widget) {
+			this.widget.selectFirst();
 		}
 	}
 
@@ -185,7 +275,13 @@ export class TriggerSuggestAction extends EditorAction {
 	}
 
 	public run(accessor: ServicesAccessor, editor: ICommonCodeEditor): void {
-		SuggestController.get(editor).triggerSuggest();
+		const controller = SuggestController.get(editor);
+
+		if (!controller) {
+			return;
+		}
+
+		controller.triggerSuggest();
 	}
 }
 
@@ -207,7 +303,7 @@ CommonEditorRegistry.registerEditorCommand(new SuggestCommand({
 
 CommonEditorRegistry.registerEditorCommand(new SuggestCommand({
 	id: 'acceptSelectedSuggestionOnEnter',
-	precondition: SuggestContext.Visible,
+	precondition: ContextKeyExpr.and(SuggestContext.Visible, SuggestContext.MakesTextEdit),
 	handler: x => x.acceptSelectedSuggestion(),
 	kbOpts: {
 		weight: weight,
@@ -254,6 +350,17 @@ CommonEditorRegistry.registerEditorCommand(new SuggestCommand({
 }));
 
 CommonEditorRegistry.registerEditorCommand(new SuggestCommand({
+	id: 'selectLastSuggestion',
+	precondition: ContextKeyExpr.and(SuggestContext.Visible, SuggestContext.MultipleSuggestions),
+	handler: c => c.selectLastSuggestion(),
+	kbOpts: {
+		weight: weight,
+		kbExpr: EditorContextKeys.TextFocus,
+		primary: KeyCode.End
+	}
+}));
+
+CommonEditorRegistry.registerEditorCommand(new SuggestCommand({
 	id: 'selectPrevSuggestion',
 	precondition: ContextKeyExpr.and(SuggestContext.Visible, SuggestContext.MultipleSuggestions),
 	handler: c => c.selectPrevSuggestion(),
@@ -275,6 +382,17 @@ CommonEditorRegistry.registerEditorCommand(new SuggestCommand({
 		kbExpr: EditorContextKeys.TextFocus,
 		primary: KeyCode.PageUp,
 		secondary: [KeyMod.Alt | KeyCode.PageUp]
+	}
+}));
+
+CommonEditorRegistry.registerEditorCommand(new SuggestCommand({
+	id: 'selectFirstSuggestion',
+	precondition: ContextKeyExpr.and(SuggestContext.Visible, SuggestContext.MultipleSuggestions),
+	handler: c => c.selectFirstSuggestion(),
+	kbOpts: {
+		weight: weight,
+		kbExpr: EditorContextKeys.TextFocus,
+		primary: KeyCode.Home
 	}
 }));
 

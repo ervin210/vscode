@@ -4,20 +4,23 @@
  *--------------------------------------------------------------------------------------------*/
 'use strict';
 
-import { LanguageModelCache } from '../languageModelCache';
+import { getLanguageModelCache } from '../languageModelCache';
 import { LanguageService as HTMLLanguageService, HTMLDocument, DocumentContext, FormattingOptions } from 'vscode-html-languageservice';
 import { TextDocument, Position, Range } from 'vscode-languageserver-types';
 import { LanguageMode } from './languageModes';
 
-export function getHTMLMode(htmlLanguageService: HTMLLanguageService, htmlDocuments: LanguageModelCache<HTMLDocument>): LanguageMode {
+export function getHTMLMode(htmlLanguageService: HTMLLanguageService): LanguageMode {
 	let settings: any = {};
-
+	let htmlDocuments = getLanguageModelCache<HTMLDocument>(10, 60, document => htmlLanguageService.parseHTMLDocument(document));
 	return {
+		getId() {
+			return 'html';
+		},
 		configure(options: any) {
 			settings = options && options.html;
 		},
 		doComplete(document: TextDocument, position: Position) {
-			let options = settings && settings.html && settings.html.suggest;
+			let options = settings && settings.suggest;
 			return htmlLanguageService.doComplete(document, position, htmlDocuments.get(document), options);
 		},
 		doHover(document: TextDocument, position: Position) {
@@ -28,6 +31,9 @@ export function getHTMLMode(htmlLanguageService: HTMLLanguageService, htmlDocume
 		},
 		findDocumentLinks(document: TextDocument, documentContext: DocumentContext) {
 			return htmlLanguageService.findDocumentLinks(document, documentContext);
+		},
+		findDocumentSymbols(document: TextDocument) {
+			return htmlLanguageService.findDocumentSymbols(document, htmlDocuments.get(document));
 		},
 		format(document: TextDocument, range: Range, formatParams: FormattingOptions) {
 			let formatSettings = settings && settings.format;

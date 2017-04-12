@@ -27,6 +27,12 @@
 	height: calc(100% - 38px);
 }
 
+.extensions-viewlet > .extensions.hidden,
+.extensions-viewlet > .message.hidden {
+	display: none;
+	visibility: hidden;
+}
+
 .extensions-viewlet > .message {
 	padding: 5px 9px 5px 16px;
 	cursor: default;
@@ -39,6 +45,10 @@
 	padding: 0 11px 0 16px;
 	overflow: hidden;
 	display: flex;
+}
+
+.extensions-viewlet > .extensions .extension.loading {
+	background: url('loading.svg') center center no-repeat;
 }
 
 .extensions-viewlet > .extensions .extension > .icon {
@@ -75,11 +85,14 @@
 	flex-wrap: wrap;
 	overflow: hidden;
 	flex: 1;
+	min-width: 0;
 }
 
 .extensions-viewlet > .extensions .extension > .details > .header-container > .header > .name {
 	font-weight: bold;
-	min-width: fit-content;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	overflow: hidden;
 }
 
 .extensions-viewlet > .extensions .extension > .details > .header-container > .header > .version {

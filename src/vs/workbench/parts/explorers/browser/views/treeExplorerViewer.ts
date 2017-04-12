@@ -6,24 +6,20 @@
 
 import { TPromise } from 'vs/base/common/winjs.base';
 import { $, Builder } from 'vs/base/browser/builder';
-import { ITree, IDataSource, IRenderer, IElementCallback } from 'vs/base/parts/tree/browser/tree';
+import { ITree, IDataSource, IRenderer, IActionProvider } from 'vs/base/parts/tree/browser/tree';
 import { InternalTreeExplorerNode } from 'vs/workbench/parts/explorers/common/treeExplorerViewModel';
 import { ClickBehavior, DefaultController } from 'vs/base/parts/tree/browser/treeDefaults';
 import { IMouseEvent } from 'vs/base/browser/mouseEvent';
 import { IActionRunner } from 'vs/base/common/actions';
-import { IActionProvider, ActionsRenderer } from 'vs/base/parts/tree/browser/actionsRenderer';
 import { ContributableActionProvider } from 'vs/workbench/browser/actionBarRegistry';
-import { IContextViewService } from 'vs/platform/contextview/browser/contextView';
-import { IExtensionService } from 'vs/platform/extensions/common/extensions';
-import { IModeService } from 'vs/editor/common/services/modeService';
-import { ICustomTreeExplorerService } from 'vs/workbench/parts/explorers/common/customTreeExplorerService';
+import { ITreeExplorerService } from 'vs/workbench/parts/explorers/common/treeExplorerService';
 import { IProgressService } from 'vs/platform/progress/common/progress';
 
 export class TreeDataSource implements IDataSource {
 
 	constructor(
 		private treeNodeProviderId: string,
-		@ICustomTreeExplorerService private treeExplorerViewletService: ICustomTreeExplorerService,
+		@ITreeExplorerService private treeExplorerService: ITreeExplorerService,
 		@IProgressService private progressService: IProgressService
 	) {
 
@@ -38,7 +34,7 @@ export class TreeDataSource implements IDataSource {
 	}
 
 	public getChildren(tree: ITree, node: InternalTreeExplorerNode): TPromise<InternalTreeExplorerNode[]> {
-		const promise = this.treeExplorerViewletService.resolveChildren(this.treeNodeProviderId, node);
+		const promise = this.treeExplorerService.resolveChildren(this.treeNodeProviderId, node);
 
 		this.progressService.showWhile(promise, 800);
 
@@ -50,38 +46,45 @@ export class TreeDataSource implements IDataSource {
 	}
 }
 
-export class TreeRenderer extends ActionsRenderer implements IRenderer {
+export interface ITreeExplorerTemplateData {
+	label: Builder;
+}
+
+export class TreeRenderer implements IRenderer {
+
+	private static ITEM_HEIGHT = 22;
+	private static TREE_TEMPLATE_ID = 'treeExplorer';
 
 	constructor(
 		state: TreeExplorerViewletState,
-		actionRunner: IActionRunner,
-		private container: HTMLElement,
-		@IContextViewService private contextViewService: IContextViewService,
-		@IExtensionService private extensionService: IExtensionService,
-		@IModeService private modeService: IModeService
+		actionRunner: IActionRunner
 	) {
-		super({
-			actionProvider: state.actionProvider,
-			actionRunner: actionRunner
-		});
 	}
 
-	public getContentHeight(tree: ITree, element: any): number {
-		return 22;
+	public getHeight(tree: ITree, element: any): number {
+		return TreeRenderer.ITEM_HEIGHT;
 	}
 
-	public renderContents(tree: ITree, node: InternalTreeExplorerNode, domElement: HTMLElement, previousCleanupFn: IElementCallback): IElementCallback {
-		const el = $(domElement).clearChildren();
+	public getTemplateId(tree: ITree, element: any): string {
+		return TreeRenderer.TREE_TEMPLATE_ID;
+	}
+
+	public renderTemplate(tree: ITree, templateId: string, container: HTMLElement): ITreeExplorerTemplateData {
+		const el = $(container);
 		const item = $('.custom-viewlet-tree-node-item');
 		item.appendTo(el);
-		return this.renderFileFolderLabel(item, node);
+
+		const label = $('.custom-viewlet-tree-node-item-label').appendTo(item);
+		const link = $('a.plain').appendTo(label);
+
+		return { label: link };
 	}
 
-	private renderFileFolderLabel(container: Builder, node: InternalTreeExplorerNode): IElementCallback {
-		const label = $('.custom-viewlet-tree-node-item-label').appendTo(container);
-		$('a.plain').text(node.label).title(node.label).appendTo(label);
+	public renderElement(tree: ITree, node: InternalTreeExplorerNode, templateId: string, templateData: ITreeExplorerTemplateData): void {
+		templateData.label.text(node.label).title(node.label);
+	}
 
-		return null;
+	public disposeTemplate(tree: ITree, templateId: string, templateData: ITreeExplorerTemplateData): void {
 	}
 }
 
@@ -89,16 +92,16 @@ export class TreeController extends DefaultController {
 
 	constructor(
 		private treeNodeProviderId: string,
-		@ICustomTreeExplorerService private treeExplorerViewletService: ICustomTreeExplorerService
+		@ITreeExplorerService private treeExplorerService: ITreeExplorerService
 	) {
-		super({ clickBehavior: ClickBehavior.ON_MOUSE_UP /* do not change to not break DND */ });
+		super({ clickBehavior: ClickBehavior.ON_MOUSE_UP /* do not change to not break DND */, keyboardSupport: false });
 	}
 
 	public onLeftClick(tree: ITree, node: InternalTreeExplorerNode, event: IMouseEvent, origin: string = 'mouse'): boolean {
 		super.onLeftClick(tree, node, event, origin);
 
 		if (node.clickCommand) {
-			this.treeExplorerViewletService.executeCommand(this.treeNodeProviderId, node);
+			this.treeExplorerService.executeCommand(this.treeNodeProviderId, node);
 		}
 
 		return true;

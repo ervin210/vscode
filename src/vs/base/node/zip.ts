@@ -83,7 +83,7 @@ export function extract(zipPath: string, targetPath: string, options: IExtractOp
 	let promise = nfcall<ZipFile>(openZip, zipPath);
 
 	if (options.overwrite) {
-		promise = promise.then(zipfile => { rimraf(targetPath); return zipfile; });
+		promise = promise.then(zipfile => rimraf(targetPath).then(() => zipfile));
 	}
 
 	return promise.then(zipfile => extractZip(zipfile, targetPath, { sourcePathRegex }));
@@ -106,9 +106,9 @@ function read(zipPath: string, filePath: string): TPromise<Readable> {
 export function buffer(zipPath: string, filePath: string): TPromise<Buffer> {
 	return read(zipPath, filePath).then(stream => {
 		return new TPromise<Buffer>((c, e) => {
-			const buffers = [];
+			const buffers: Buffer[] = [];
 			stream.once('error', e);
-			stream.on('data', b => buffers.push(b));
+			stream.on('data', b => buffers.push(b as Buffer));
 			stream.on('end', () => c(Buffer.concat(buffers)));
 		});
 	});

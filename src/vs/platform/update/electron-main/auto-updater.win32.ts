@@ -15,10 +15,9 @@ import { mkdirp } from 'vs/base/node/extfs';
 import { isString } from 'vs/base/common/types';
 import { Promise, TPromise } from 'vs/base/common/winjs.base';
 import { download, asJson } from 'vs/base/node/request';
-import { ILifecycleMainService } from 'vs/platform/lifecycle/common/mainLifecycle';
 import { IRequestService } from 'vs/platform/request/node/request';
 import { IAutoUpdater } from 'vs/platform/update/common/update';
-import product from 'vs/platform/product';
+import product from 'vs/platform/node/product';
 
 interface IUpdate {
 	url: string;
@@ -36,7 +35,6 @@ export class Win32AutoUpdaterImpl extends EventEmitter implements IAutoUpdater {
 	private updatePackagePath: string = null;
 
 	constructor(
-		@ILifecycleMainService private lifecycleService: ILifecycleMainService,
 		@IRequestService private requestService: IRequestService
 	) {
 		super();

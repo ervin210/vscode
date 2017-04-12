@@ -11,23 +11,19 @@ import { TPromise } from 'vs/base/common/winjs.base';
 import { IDisposable, dispose } from 'vs/base/common/lifecycle';
 import Event, { Emitter } from 'vs/base/common/event';
 import { addDisposableListener, addClass } from 'vs/base/browser/dom';
-import { isLightTheme, isDarkTheme } from 'vs/platform/theme/common/themes';
 import { CommandsRegistry } from 'vs/platform/commands/common/commands';
 import { MenuRegistry } from 'vs/platform/actions/common/actions';
+import { editorBackground, editorForeground } from 'vs/platform/theme/common/colorRegistry';
+import { ITheme, LIGHT, DARK } from "vs/platform/theme/common/themeService";
 
 declare interface WebviewElement extends HTMLElement {
 	src: string;
 	autoSize: 'on';
-	nodeintegration: 'on';
-	disablewebsecurity: 'on';
 	preload: string;
+	contextIsolation: boolean;
 
-	getURL(): string;
-	getTitle(): string;
-	executeJavaScript(code: string, userGesture?: boolean, callback?: (result: any) => any);
 	send(channel: string, ...args: any[]);
 	openDevTools(): any;
-	closeDevTools(): any;
 }
 
 CommandsRegistry.registerCommand('_webview.openDevTools', function () {
@@ -48,10 +44,6 @@ MenuRegistry.addCommand({
 
 type ApiThemeClassName = 'vscode-light' | 'vscode-dark' | 'vscode-high-contrast';
 
-export interface WebviewOptions {
-	nodeintegration: boolean;
-}
-
 export default class Webview {
 
 	private _webview: WebviewElement;
@@ -60,17 +52,20 @@ export default class Webview {
 	private _onDidClickLink = new Emitter<URI>();
 	private _onDidLoadContent = new Emitter<{ stats: any }>();
 
-	constructor(parent: HTMLElement, private _styleElement: Element, options: WebviewOptions) {
+	constructor(
+		private parent: HTMLElement,
+		private _styleElement: Element
+	) {
 		this._webview = <any>document.createElement('webview');
 
 		this._webview.style.width = '100%';
 		this._webview.style.height = '100%';
 		this._webview.style.outline = '0';
 		this._webview.style.opacity = '0';
-		this._webview.autoSize = 'on';
-		if (options.nodeintegration) {
-			this._webview.nodeintegration = 'on';
-		}
+		this._webview.contextIsolation = true;
+
+		// disable auxclick events (see https://developers.google.com/web/updates/2016/10/auxclick)
+		this._webview.setAttribute('disableblinkfeatures', 'Auxclick');
 
 		this._webview.preload = require.toUrl('./webview-pre.js');
 		this._webview.src = require.toUrl('./webview.html');
@@ -78,6 +73,7 @@ export default class Webview {
 		this._ready = new TPromise<this>(resolve => {
 			const subscription = addDisposableListener(this._webview, 'ipc-message', (event) => {
 				if (event.channel === 'webview-ready') {
+					this.layout();
 
 					// console.info('[PID Webview] ' + event.args[0]);
 					addClass(this._webview, 'ready'); // can be found by debug command
@@ -106,6 +102,7 @@ export default class Webview {
 					this._webview.style.opacity = '';
 					let [stats] = event.args;
 					this._onDidLoadContent.fire({ stats });
+					this.layout();
 					return;
 				}
 			})
@@ -124,10 +121,6 @@ export default class Webview {
 		if (this._webview.parentElement) {
 			this._webview.parentElement.removeChild(this._webview);
 		}
-	}
-
-	get domNode(): HTMLElement {
-		return this._webview;
 	}
 
 	get onDidClickLink(): Event<URI> {
@@ -157,13 +150,17 @@ export default class Webview {
 		this._send('focus');
 	}
 
-	style(themeId: string): void {
-		const {color, backgroundColor, fontFamily, fontWeight, fontSize} = window.getComputedStyle(this._styleElement);
+	public sendMessage(data: any): void {
+		this._send('message', data);
+	}
+
+	style(theme: ITheme): void {
+		const { fontFamily, fontWeight, fontSize } = window.getComputedStyle(this._styleElement); // TODO@theme avoid styleElement
 
 		let value = `
 		:root {
-			--background-color: ${backgroundColor};
-			--color: ${color};
+			--background-color: ${theme.getColor(editorBackground)};
+			--color: ${theme.getColor(editorForeground)};
 			--font-family: ${fontFamily};
 			--font-weight: ${fontWeight};
 			--font-size: ${fontSize};
@@ -175,6 +172,7 @@ export default class Webview {
 			font-weight: var(--font-weight);
 			font-size: var(--font-size);
 			margin: 0;
+			padding: 0 20px;
 		}
 
 		img {
@@ -196,7 +194,7 @@ export default class Webview {
 
 		let activeTheme: ApiThemeClassName;
 
-		if (isLightTheme(themeId)) {
+		if (theme.type === LIGHT) {
 			value += `
 			::-webkit-scrollbar-thumb {
 				background-color: rgba(100, 100, 100, 0.4);
@@ -210,7 +208,7 @@ export default class Webview {
 
 			activeTheme = 'vscode-light';
 
-		} else if (isDarkTheme(themeId)) {
+		} else if (theme.type === DARK) {
 			value += `
 			::-webkit-scrollbar-thumb {
 				background-color: rgba(121, 121, 121, 0.4);
@@ -240,5 +238,24 @@ export default class Webview {
 		}
 
 		this._send('styles', value, activeTheme);
+	}
+
+	public layout(): void {
+		const contents = (this._webview as any).getWebContents();
+		if (!contents) {
+			return;
+		}
+
+		const width = this.parent.clientWidth;
+		const height = this.parent.clientHeight;
+
+		contents.getZoomFactor(factor => {
+			contents.setSize({
+				normal: {
+					width: Math.floor(width * factor),
+					height: Math.floor(height * factor)
+				}
+			});
+		});
 	}
 }

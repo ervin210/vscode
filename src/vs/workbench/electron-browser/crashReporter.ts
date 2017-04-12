@@ -13,8 +13,8 @@ import { IWindowsService } from 'vs/platform/windows/common/windows';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { Registry } from 'vs/platform/platform';
 import { crashReporter } from 'electron';
-import product from 'vs/platform/product';
-import pkg from 'vs/platform/package';
+import product from 'vs/platform/node/product';
+import pkg from 'vs/platform/node/package';
 
 const TELEMETRY_SECTION_ID = 'telemetry';
 
@@ -52,7 +52,12 @@ export class CrashReporter {
 		}
 
 		telemetryService.getTelemetryInfo()
-			.then(info => ({ vscode_sessionId: info.sessionId, vscode_version: pkg.version, vscode_commit: product.commit }))
+			.then(info => ({
+				vscode_sessionId: info.sessionId,
+				vscode_version: pkg.version,
+				vscode_commit: product.commit,
+				vscode_machineId: info.machineId
+			}))
 			.then(extra => assign(configuration, { extra }))
 			.then(configuration => {
 				// start crash reporter right here

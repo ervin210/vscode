@@ -5,37 +5,49 @@
 'use strict';
 
 import { LanguageModelCache, getLanguageModelCache } from '../languageModelCache';
-import { LanguageService as HTMLLanguageService, HTMLDocument } from 'vscode-html-languageservice';
-import { getEmbeddedDocument } from './embeddedSupport';
-import { CompletionItem, Location, SignatureHelp, SignatureInformation, ParameterInformation, Definition, TextEdit, TextDocument, Diagnostic, DiagnosticSeverity, Range, CompletionItemKind, Hover, MarkedString, DocumentHighlight, DocumentHighlightKind, CompletionList, Position, FormattingOptions } from 'vscode-languageserver-types';
+import { SymbolInformation, SymbolKind, CompletionItem, Location, SignatureHelp, SignatureInformation, ParameterInformation, Definition, TextEdit, TextDocument, Diagnostic, DiagnosticSeverity, Range, CompletionItemKind, Hover, MarkedString, DocumentHighlight, DocumentHighlightKind, CompletionList, Position, FormattingOptions } from 'vscode-languageserver-types';
 import { LanguageMode } from './languageModes';
-import { getWordAtText } from '../utils/words';
+import { getWordAtText, startsWith, isWhitespaceOnly, repeat } from '../utils/strings';
+import { HTMLDocumentRegions } from './embeddedSupport';
 
-import ts = require('./typescript/typescriptServices');
-import { contents as libdts } from './typescript/lib-ts';
+import * as ts from 'typescript';
+import { join } from 'path';
 
-const DEFAULT_LIB = {
-	NAME: 'defaultLib:lib.d.ts',
-	CONTENTS: libdts
-};
-const FILE_NAME = 'typescript://singlefile/1';  // the same 'file' is used for all contents
+const FILE_NAME = 'vscode://javascript/1';  // the same 'file' is used for all contents
+const JQUERY_D_TS = join(__dirname, '../../lib/jquery.d.ts');
 
 const JS_WORD_REGEX = /(-?\d*\.\d\w*)|([^\`\~\!\@\#\%\^\&\*\(\)\-\=\+\[\{\]\}\\\|\;\:\'\"\,\.\<\>\/\?\s]+)/g;
 
-export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, htmlDocuments: LanguageModelCache<HTMLDocument>): LanguageMode {
-	let compilerOptions = { allowNonTsExtensions: true, allowJs: true, target: ts.ScriptTarget.Latest };
+export function getJavascriptMode(documentRegions: LanguageModelCache<HTMLDocumentRegions>): LanguageMode {
+	let jsDocuments = getLanguageModelCache<TextDocument>(10, 60, document => documentRegions.get(document).getEmbeddedDocument('javascript'));
+
+	let compilerOptions: ts.CompilerOptions = { allowNonTsExtensions: true, allowJs: true, lib: ['lib.es6.d.ts'], target: ts.ScriptTarget.Latest, moduleResolution: ts.ModuleResolutionKind.Classic };
 	let currentTextDocument: TextDocument;
+	let scriptFileVersion: number = 0;
+	function updateCurrentTextDocument(doc: TextDocument) {
+		if (!currentTextDocument || doc.uri !== currentTextDocument.uri || doc.version !== currentTextDocument.version) {
+			currentTextDocument = jsDocuments.get(doc);
+			scriptFileVersion++;
+		}
+	}
 	let host = {
 		getCompilationSettings: () => compilerOptions,
-		getScriptFileNames: () => [FILE_NAME],
+		getScriptFileNames: () => [FILE_NAME, JQUERY_D_TS],
 		getScriptVersion: (fileName: string) => {
 			if (fileName === FILE_NAME) {
-				return String(currentTextDocument.version);
+				return String(scriptFileVersion);
 			}
-			return '1'; // default lib is static
+			return '1'; // default lib an jquery.d.ts are static
 		},
 		getScriptSnapshot: (fileName: string) => {
-			let text = fileName === FILE_NAME ? currentTextDocument.getText() : DEFAULT_LIB.CONTENTS;
+			let text = '';
+			if (startsWith(fileName, 'vscode:')) {
+				if (fileName === FILE_NAME) {
+					text = currentTextDocument.getText();
+				}
+			} else {
+				text = ts.sys.readFile(fileName) || '';
+			}
 			return {
 				getText: (start, end) => text.substring(start, end),
 				getLength: () => text.length,
@@ -43,23 +55,23 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			};
 		},
 		getCurrentDirectory: () => '',
-		getDefaultLibFileName: options => DEFAULT_LIB.NAME
+		getDefaultLibFileName: (options) => ts.getDefaultLibFilePath(options)
 	};
 	let jsLanguageService = ts.createLanguageService(host);
 
-	let jsDocuments = getLanguageModelCache<TextDocument>(10, 60, document => {
-		return getEmbeddedDocument(htmlLanguageService, document, htmlDocuments.get(document), 'javascript');
-	});
 	let settings: any = {};
 
 	return {
+		getId() {
+			return 'javascript';
+		},
 		configure(options: any) {
 			settings = options && options.javascript;
 		},
 		doValidation(document: TextDocument): Diagnostic[] {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			const diagnostics = jsLanguageService.getSyntacticDiagnostics(FILE_NAME);
-			return diagnostics.map(diag => {
+			return diagnostics.map((diag): Diagnostic => {
 				return {
 					range: convertRange(currentTextDocument, diag),
 					severity: DiagnosticSeverity.Error,
@@ -68,7 +80,7 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			});
 		},
 		doComplete(document: TextDocument, position: Position): CompletionList {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			let offset = currentTextDocument.offsetAt(position);
 			let completions = jsLanguageService.getCompletionsAtPosition(FILE_NAME, offset);
 			if (!completions) {
@@ -95,7 +107,7 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			};
 		},
 		doResolve(document: TextDocument, item: CompletionItem): CompletionItem {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			let details = jsLanguageService.getCompletionEntryDetails(FILE_NAME, item.data.offset, item.label);
 			if (details) {
 				item.detail = ts.displayPartsToString(details.displayParts);
@@ -105,7 +117,7 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			return item;
 		},
 		doHover(document: TextDocument, position: Position): Hover {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			let info = jsLanguageService.getQuickInfoAtPosition(FILE_NAME, currentTextDocument.offsetAt(position));
 			if (info) {
 				let contents = ts.displayPartsToString(info.displayParts);
@@ -117,7 +129,7 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			return null;
 		},
 		doSignatureHelp(document: TextDocument, position: Position): SignatureHelp {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			let signHelp = jsLanguageService.getSignatureHelpItems(FILE_NAME, currentTextDocument.offsetAt(position));
 			if (signHelp) {
 				let ret: SignatureHelp = {
@@ -154,20 +166,56 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			return null;
 		},
 		findDocumentHighlight(document: TextDocument, position: Position): DocumentHighlight[] {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			let occurrences = jsLanguageService.getOccurrencesAtPosition(FILE_NAME, currentTextDocument.offsetAt(position));
 			if (occurrences) {
 				return occurrences.map(entry => {
 					return {
 						range: convertRange(currentTextDocument, entry.textSpan),
-						kind: entry.isWriteAccess ? DocumentHighlightKind.Write : DocumentHighlightKind.Text
+						kind: <DocumentHighlightKind>(entry.isWriteAccess ? DocumentHighlightKind.Write : DocumentHighlightKind.Text)
 					};
 				});
 			};
 			return null;
 		},
+		findDocumentSymbols(document: TextDocument): SymbolInformation[] {
+			updateCurrentTextDocument(document);
+			let items = jsLanguageService.getNavigationBarItems(FILE_NAME);
+			if (items) {
+				let result: SymbolInformation[] = [];
+				let existing = {};
+				let collectSymbols = (item: ts.NavigationBarItem, containerLabel?: string) => {
+					let sig = item.text + item.kind + item.spans[0].start;
+					if (item.kind !== 'script' && !existing[sig]) {
+						let symbol: SymbolInformation = {
+							name: item.text,
+							kind: convertSymbolKind(item.kind),
+							location: {
+								uri: document.uri,
+								range: convertRange(currentTextDocument, item.spans[0])
+							},
+							containerName: containerLabel
+						};
+						existing[sig] = true;
+						result.push(symbol);
+						containerLabel = item.text;
+					}
+
+					if (item.childItems && item.childItems.length > 0) {
+						for (let child of item.childItems) {
+							collectSymbols(child, containerLabel);
+						}
+					}
+
+				};
+
+				items.forEach(item => collectSymbols(item));
+				return result;
+			}
+			return null;
+		},
 		findDefinition(document: TextDocument, position: Position): Definition {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			let definition = jsLanguageService.getDefinitionAtPosition(FILE_NAME, currentTextDocument.offsetAt(position));
 			if (definition) {
 				return definition.filter(d => d.fileName === FILE_NAME).map(d => {
@@ -180,7 +228,7 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			return null;
 		},
 		findReferences(document: TextDocument, position: Position): Location[] {
-			currentTextDocument = jsDocuments.get(document);
+			updateCurrentTextDocument(document);
 			let references = jsLanguageService.getReferencesAtPosition(FILE_NAME, currentTextDocument.offsetAt(position));
 			if (references) {
 				return references.filter(d => d.fileName === FILE_NAME).map(d => {
@@ -193,11 +241,18 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			return null;
 		},
 		format(document: TextDocument, range: Range, formatParams: FormattingOptions): TextEdit[] {
-			currentTextDocument = jsDocuments.get(document);
-			let initialIndentLevel = computeInitialIndent(document, range, formatParams) + 1;
-			let formatSettings = convertOptions(formatParams, settings && settings.format, initialIndentLevel);
+			currentTextDocument = documentRegions.get(document).getEmbeddedDocument('javascript', true);
+			scriptFileVersion++;
+
+			let initialIndentLevel = computeInitialIndent(document, range, formatParams);
+			let formatSettings = convertOptions(formatParams, settings && settings.format, initialIndentLevel + 1);
 			let start = currentTextDocument.offsetAt(range.start);
 			let end = currentTextDocument.offsetAt(range.end);
+			let lastLineRange = null;
+			if (range.end.character === 0 || isWhitespaceOnly(currentTextDocument.getText().substr(end - range.end.character, range.end.character))) {
+				end -= range.end.character;
+				lastLineRange = Range.create(Position.create(range.end.line, 0), range.end);
+			}
 			let edits = jsLanguageService.getFormattingEditsForRange(FILE_NAME, start, end, formatSettings);
 			if (edits) {
 				let result = [];
@@ -209,6 +264,12 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 						});
 					}
 				}
+				if (lastLineRange) {
+					result.push({
+						range: lastLineRange,
+						newText: generateIndent(initialIndentLevel, formatParams)
+					});
+				}
 				return result;
 			}
 			return null;
@@ -217,8 +278,8 @@ export function getJavascriptMode(htmlLanguageService: HTMLLanguageService, html
 			jsDocuments.onDocumentRemoved(document);
 		},
 		dispose() {
-			jsDocuments.dispose();
 			jsLanguageService.dispose();
+			jsDocuments.dispose();
 		}
 	};
 };
@@ -262,6 +323,33 @@ function convertKind(kind: string): CompletionItemKind {
 	return CompletionItemKind.Property;
 }
 
+function convertSymbolKind(kind: string): SymbolKind {
+	switch (kind) {
+		case 'var':
+		case 'local var':
+		case 'const':
+			return SymbolKind.Variable;
+		case 'function':
+		case 'local function':
+			return SymbolKind.Function;
+		case 'enum':
+			return SymbolKind.Enum;
+		case 'module':
+			return SymbolKind.Module;
+		case 'class':
+			return SymbolKind.Class;
+		case 'interface':
+			return SymbolKind.Interface;
+		case 'method':
+			return SymbolKind.Method;
+		case 'property':
+		case 'getter':
+		case 'setter':
+			return SymbolKind.Property;
+	}
+	return SymbolKind.Variable;
+}
+
 function convertOptions(options: FormattingOptions, formatSettings: any, initialIndentLevel: number): ts.FormatCodeOptions {
 	return {
 		ConvertTabsToSpaces: options.insertSpaces,
@@ -302,4 +390,12 @@ function computeInitialIndent(document: TextDocument, range: Range, options: For
 		i++;
 	}
 	return Math.floor(nChars / tabSize);
+}
+
+function generateIndent(level: number, options: FormattingOptions) {
+	if (options.insertSpaces) {
+		return repeat(' ', level * options.tabSize);
+	} else {
+		return repeat('\t', level);
+	}
 }

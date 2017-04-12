@@ -7,12 +7,25 @@
 
 'use strict';
 
+if (window.location.search.indexOf('prof-startup') >= 0) {
+	var profiler = require('v8-profiler');
+	profiler.startProfiling('renderer', true);
+}
+
 /*global window,document,define*/
 
 const path = require('path');
 const electron = require('electron');
 const remote = electron.remote;
 const ipc = electron.ipcRenderer;
+
+process.lazyEnv = new Promise(function (resolve) {
+	ipc.once('vscode:acceptShellEnv', function (event, shellEnv) {
+		assign(process.env, shellEnv);
+		resolve(process.env);
+	});
+	ipc.send('vscode:fetchShellEnv', remote.getCurrentWindow().id);
+});
 
 function onError(error, enableDeveloperTools) {
 	if (enableDeveloperTools) {
@@ -125,7 +138,7 @@ function main() {
 
 	window.document.documentElement.setAttribute('lang', locale);
 
-	const enableDeveloperTools = process.env['VSCODE_DEV'] || !!configuration.extensionDevelopmentPath;
+	const enableDeveloperTools = (process.env['VSCODE_DEV'] || !!configuration.extensionDevelopmentPath) && !configuration.extensionTestsPath;
 	const unbind = registerListeners(enableDeveloperTools);
 
 	// disable pinch zoom & apply zoom level early to avoid glitches
@@ -133,16 +146,6 @@ function main() {
 	webFrame.setZoomLevelLimits(1, 1);
 	if (typeof zoomLevel === 'number' && zoomLevel !== 0) {
 		webFrame.setZoomLevel(zoomLevel);
-	}
-
-	// Handle high contrast mode
-	if (configuration.highContrast) {
-		var themeStorageKey = 'storage://global/workbench.theme';
-		var hcTheme = 'hc-black vscode-theme-defaults-themes-hc_black-json';
-		if (window.localStorage.getItem(themeStorageKey) !== hcTheme) {
-			window.localStorage.setItem(themeStorageKey, hcTheme);
-			window.document.body.className = 'monaco-shell ' + hcTheme;
-		}
 	}
 
 	// Load the loader and start loading the workbench
@@ -153,10 +156,16 @@ function main() {
 	createScript(rootUrl + '/vs/loader.js', function () {
 		define('fs', ['original-fs'], function (originalFS) { return originalFS; }); // replace the patched electron fs with the original node fs for all AMD code
 
+		window.MonacoEnvironment = {};
+
+		const nodeCachedDataErrors = window.MonacoEnvironment.nodeCachedDataErrors = [];
 		require.config({
 			baseUrl: rootUrl,
 			'vs/nls': nlsConfig,
-			recordStats: !!configuration.performance
+			recordStats: !!configuration.performance,
+			nodeCachedDataDir: configuration.nodeCachedDataDir,
+			onNodeCachedDataError: function (err) { nodeCachedDataErrors.push(err) },
+			nodeModules: [/*BUILD->INSERT_NODE_MODULES*/]
 		});
 
 		if (nlsConfig.pseudo) {
@@ -166,14 +175,13 @@ function main() {
 		}
 
 		// Perf Counters
-		window.MonacoEnvironment = {};
 		const timers = window.MonacoEnvironment.timers = {
-			start: new Date(configuration.isInitialStartup ? configuration.perfStartTime : configuration.perfWindowLoadTime),
 			isInitialStartup: !!configuration.isInitialStartup,
 			hasAccessibilitySupport: !!configuration.accessibilitySupport,
-			perfStartTime: new Date(configuration.perfStartTime),
-			perfWindowLoadTime: new Date(configuration.perfWindowLoadTime),
-			perfBeforeLoadWorkbenchMain: new Date()
+			start: configuration.perfStartTime,
+			appReady: configuration.perfAppReady,
+			windowLoad: configuration.perfWindowLoadTime,
+			beforeLoadWorkbenchMain: Date.now()
 		};
 
 		require([
@@ -181,15 +189,17 @@ function main() {
 			'vs/nls!vs/workbench/electron-browser/workbench.main',
 			'vs/css!vs/workbench/electron-browser/workbench.main'
 		], function () {
-			timers.perfAfterLoadWorkbenchMain = new Date();
+			timers.afterLoadWorkbenchMain = Date.now();
 
-			require('vs/workbench/electron-browser/main')
-				.startup(configuration)
-				.done(function () {
-					unbind(); // since the workbench is running, unbind our developer related listeners and let the workbench handle them
-				}, function (error) {
-					onError(error, enableDeveloperTools);
-				});
+			process.lazyEnv.then(function () {
+				require('vs/workbench/electron-browser/main')
+					.startup(configuration)
+					.done(function () {
+						unbind(); // since the workbench is running, unbind our developer related listeners and let the workbench handle them
+					}, function (error) {
+						onError(error, enableDeveloperTools);
+					});
+			});
 		});
 	});
 }
