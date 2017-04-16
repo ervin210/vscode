@@ -74,7 +74,7 @@ class OpenInDiffAction extends baseeditor.EditorInputAction {
 		this.partService = partService;
 		this.contextService = contextService;
 
-		this.toDispose = [this.gitService.addBulkListener2(() => this.onGitStateChanged())];
+		this.toDispose = [this.gitService.addBulkListener(() => this.onGitStateChanged())];
 
 		this.enabled = this.isEnabled();
 	}
@@ -519,7 +519,7 @@ export class RevertRangesAction extends baseeditor.EditorInputAction {
 	public run(): TPromise<any> {
 		const selections = this.editor.getSelections();
 		const changes = getSelectedChanges(this.editor.getLineChanges(), selections);
-		const {original, modified} = this.editor.getModel();
+		const { original, modified } = this.editor.getModel();
 
 		const revertEdits = getChangeRevertEdits(original, modified, changes);
 

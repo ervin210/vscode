@@ -50,6 +50,10 @@ export class DragAndDropController implements editorCommon.IEditorContribution {
 	}
 
 	private onEditorKeyDown(e: IKeyboardEvent): void {
+		if (!this._editor.getConfiguration().dragAndDrop) {
+			return;
+		}
+
 		if (this._mouseDown && e[DragAndDropController.TRIGGER_MODIFIER]) {
 			this._editor.updateOptions({
 				mouseStyle: 'copy'
@@ -58,6 +62,10 @@ export class DragAndDropController implements editorCommon.IEditorContribution {
 	}
 
 	private onEditorKeyUp(e: IKeyboardEvent): void {
+		if (!this._editor.getConfiguration().dragAndDrop) {
+			return;
+		}
+
 		if (this._mouseDown && e.keyCode === DragAndDropController.TRIGGER_KEY_VALUE) {
 			this._editor.updateOptions({
 				mouseStyle: 'default'
@@ -115,7 +123,11 @@ export class DragAndDropController implements editorCommon.IEditorContribution {
 					}
 				});
 				this._editor.setSelections(newSelections);
-			} else if (!this._dragSelection.containsPosition(newCursorPosition)) {
+			} else if (!this._dragSelection.containsPosition(newCursorPosition) || (
+				mouseEvent.event[DragAndDropController.TRIGGER_MODIFIER] && (
+					this._dragSelection.getEndPosition().equals(newCursorPosition) || this._dragSelection.getStartPosition().equals(newCursorPosition)
+				) // we allow users to paste content beside the selection
+			)) {
 				this._editor.executeCommand(DragAndDropController.ID, new DragAndDropCommand(this._dragSelection, newCursorPosition, mouseEvent.event[DragAndDropController.TRIGGER_MODIFIER]));
 			}
 		}
