@@ -1,3 +1,4 @@
+[![Stories in Ready](https://badge.waffle.io/ervin210/Live-Room-Visual-studio.png?label=ready&title=Ready)](https://waffle.io/ervin210/Live-Room-Visual-studio?utm_source=badge)
 # Visual Studio Code - Open Source
 
 [![Build Status](https://travis-ci.org/Microsoft/vscode.svg?branch=master)](https://travis-ci.org/Microsoft/vscode)
