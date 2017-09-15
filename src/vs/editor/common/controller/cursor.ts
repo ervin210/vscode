@@ -949,10 +949,17 @@ export class Cursor extends EventEmitter {
 		this._handlers[H.CursorEnd] = (ctx) => this._moveToEndOfLine(false, ctx);
 		this._handlers[H.CursorEndSelect] = (ctx) => this._moveToEndOfLine(true, ctx);
 
+<<<<<<< HEAD
 		this._handlers[H.CursorTop] = (ctx) => this._moveToBeginningOfBuffer(false, ctx);
 		this._handlers[H.CursorTopSelect] = (ctx) => this._moveToBeginningOfBuffer(true, ctx);
 		this._handlers[H.CursorBottom] = (ctx) => this._moveToEndOfBuffer(false, ctx);
 		this._handlers[H.CursorBottomSelect] = (ctx) => this._moveToEndOfBuffer(true, ctx);
+=======
+		this._handlers[H.CursorHardHome] =				(ctx) => this._moveToHardBeginningOfLine(false, ctx);
+
+		this._handlers[H.CursorEnd] =					(ctx) => this._moveToEndOfLine(false, ctx);
+		this._handlers[H.CursorEndSelect] =				(ctx) => this._moveToEndOfLine(true, ctx);
+>>>>>>> origin/alex/cursorHardHome
 
 		this._handlers[H.CursorColumnSelectLeft] = (ctx) => this._columnSelectLeft(ctx);
 		this._handlers[H.CursorColumnSelectRight] = (ctx) => this._columnSelectRight(ctx);
@@ -1276,12 +1283,21 @@ export class Cursor extends EventEmitter {
 		return true;
 	}
 
+<<<<<<< HEAD
 	private _moveToEndOfLine(inSelectionMode: boolean, ctx: IMultipleCursorOperationContext): boolean {
 		ctx.cursorPositionChangeReason = editorCommon.CursorChangeReason.Explicit;
 		ctx.shouldPushStackElementBefore = true;
 		ctx.shouldPushStackElementAfter = true;
 		this.cursors.setStates(OneCursorOp.moveToEndOfLine(this.context, this.cursors.getAll(), inSelectionMode), true);
 		return true;
+=======
+	private _moveToHardBeginningOfLine(inSelectionMode:boolean, ctx: IMultipleCursorOperationContext): boolean {
+		return this._invokeForAll(ctx, (cursorIndex: number, oneCursor: OneCursor, oneCtx: IOneCursorOperationContext) => OneCursorOp.moveToHardBeginningOfLine(oneCursor, inSelectionMode, oneCtx));
+	}
+
+	private _moveToEndOfLine(inSelectionMode:boolean, ctx: IMultipleCursorOperationContext): boolean {
+		return this._invokeForAll(ctx, (cursorIndex: number, oneCursor: OneCursor, oneCtx: IOneCursorOperationContext) => OneCursorOp.moveToEndOfLine(oneCursor, inSelectionMode, oneCtx));
+>>>>>>> origin/alex/cursorHardHome
 	}
 
 	private _moveToBeginningOfBuffer(inSelectionMode: boolean, ctx: IMultipleCursorOperationContext): boolean {

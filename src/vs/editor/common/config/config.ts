@@ -274,6 +274,7 @@ class WordCommand extends CoreCommand {
 // Control+Command+d => noop
 // Control+Command+shift+d => noop
 
+<<<<<<< HEAD
 // Register cursor commands
 registerCoreAPICommand(H.CursorMove, D.CursorMove);
 
@@ -739,6 +740,157 @@ class SelectAllCommand extends BaseTextInputAwareCommand {
 	protected getInputHandler(): string {
 		return 'selectAll';
 	}
+=======
+registerCoreCommand(H.CursorLeft, {
+	primary: KeyCode.LeftArrow,
+	mac: { primary: KeyCode.LeftArrow, secondary: [KeyMod.WinCtrl | KeyCode.KEY_B] }
+});
+registerCoreCommand(H.CursorLeftSelect, {
+	primary: KeyMod.Shift | KeyCode.LeftArrow
+});
+registerCoreCommand(H.CursorRight, {
+	primary: KeyCode.RightArrow,
+	mac: { primary: KeyCode.RightArrow, secondary: [KeyMod.WinCtrl | KeyCode.KEY_F] }
+});
+registerCoreCommand(H.CursorRightSelect, {
+	primary: KeyMod.Shift | KeyCode.RightArrow
+});
+registerCoreCommand(H.CursorUp, {
+	primary: KeyCode.UpArrow,
+	mac: { primary: KeyCode.UpArrow, secondary: [KeyMod.WinCtrl | KeyCode.KEY_P] }
+});
+registerCoreCommand(H.CursorUpSelect, {
+	primary: KeyMod.Shift | KeyCode.UpArrow,
+	secondary: [getWordNavigationKB(true, KeyCode.UpArrow)],
+	mac: { primary: KeyMod.Shift | KeyCode.UpArrow },
+	linux: { primary: KeyMod.Shift | KeyCode.UpArrow }
+});
+registerCoreCommand(H.CursorDown, {
+	primary: KeyCode.DownArrow,
+	mac: { primary: KeyCode.DownArrow, secondary: [KeyMod.WinCtrl | KeyCode.KEY_N] }
+});
+registerCoreCommand(H.CursorDownSelect, {
+	primary: KeyMod.Shift | KeyCode.DownArrow,
+	secondary: [getWordNavigationKB(true, KeyCode.DownArrow)],
+	mac: { primary: KeyMod.Shift | KeyCode.DownArrow },
+	linux: { primary: KeyMod.Shift | KeyCode.DownArrow }
+});
+
+registerCoreCommand(H.CursorPageUp, {
+	primary: KeyCode.PageUp
+});
+registerCoreCommand(H.CursorPageUpSelect, {
+	primary: KeyMod.Shift | KeyCode.PageUp
+});
+registerCoreCommand(H.CursorPageDown, {
+	primary: KeyCode.PageDown
+});
+registerCoreCommand(H.CursorPageDownSelect, {
+	primary: KeyMod.Shift | KeyCode.PageDown
+});
+registerCoreCommand(H.CursorHome, {
+	primary: KeyCode.Home,
+	mac: { primary: KeyCode.Home, secondary: [KeyMod.CtrlCmd | KeyCode.LeftArrow, KeyMod.WinCtrl | KeyCode.KEY_A] }
+});
+registerCoreCommand(H.CursorHardHome, { primary: null });
+registerCoreCommand(H.CursorHomeSelect, {
+	primary: KeyMod.Shift | KeyCode.Home,
+	mac: { primary: KeyMod.Shift | KeyCode.Home, secondary: [KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.LeftArrow] }
+});
+registerCoreCommand(H.CursorEnd, {
+	primary: KeyCode.End,
+	mac: { primary: KeyCode.End, secondary: [KeyMod.CtrlCmd | KeyCode.RightArrow, KeyMod.WinCtrl | KeyCode.KEY_E] }
+});
+registerCoreCommand(H.CursorEndSelect, {
+	primary: KeyMod.Shift | KeyCode.End,
+	mac: { primary: KeyMod.Shift | KeyCode.End, secondary: [KeyMod.CtrlCmd | KeyMod.Shift | KeyCode.RightArrow] }
+});
+registerCoreCommand(H.ExpandLineSelection, {
+	primary: KeyMod.CtrlCmd | KeyCode.KEY_I
+});
+
+registerCoreCommand(H.ScrollLineUp, {
+	primary: KeyMod.CtrlCmd | KeyCode.UpArrow,
+	mac: { primary: KeyMod.WinCtrl | KeyCode.PageUp}
+});
+registerCoreCommand(H.ScrollLineDown, {
+	primary: KeyMod.CtrlCmd | KeyCode.DownArrow,
+	mac: { primary: KeyMod.WinCtrl | KeyCode.PageDown}
+});
+
+registerCoreCommand(H.ScrollPageUp, {
+	primary: KeyMod.CtrlCmd | KeyCode.PageUp,
+	win: { primary: KeyMod.Alt | KeyCode.PageUp },
+	linux: { primary: KeyMod.Alt | KeyCode.PageUp }
+});
+registerCoreCommand(H.ScrollPageDown, {
+	primary: KeyMod.CtrlCmd | KeyCode.PageDown,
+	win: { primary: KeyMod.Alt | KeyCode.PageDown },
+	linux: { primary: KeyMod.Alt | KeyCode.PageDown }
+});
+
+registerCoreCommand(H.CursorColumnSelectLeft, {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.LeftArrow,
+	linux: { primary: 0 }
+});
+registerCoreCommand(H.CursorColumnSelectRight, {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.RightArrow,
+	linux: { primary: 0 }
+});
+registerCoreCommand(H.CursorColumnSelectUp, {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.UpArrow,
+	linux: { primary: 0 }
+});
+registerCoreCommand(H.CursorColumnSelectPageUp, {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.PageUp,
+	linux: { primary: 0 }
+});
+registerCoreCommand(H.CursorColumnSelectDown, {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.DownArrow,
+	linux: { primary: 0 }
+});
+registerCoreCommand(H.CursorColumnSelectPageDown, {
+	primary: KeyMod.CtrlCmd | KeyMod.Shift | KeyMod.Alt | KeyCode.PageDown,
+	linux: { primary: 0 }
+});
+
+registerCoreCommand(H.Tab, {
+	primary: KeyCode.Tab
+}, KeybindingsRegistry.WEIGHT.editorCore(), KbExpr.and(
+	KbExpr.has(editorCommon.KEYBINDING_CONTEXT_EDITOR_TEXT_FOCUS),
+	KbExpr.not(editorCommon.KEYBINDING_CONTEXT_EDITOR_TAB_MOVES_FOCUS)
+));
+registerCoreCommand(H.Outdent, {
+	primary: KeyMod.Shift | KeyCode.Tab
+}, KeybindingsRegistry.WEIGHT.editorCore(), KbExpr.and(
+	KbExpr.has(editorCommon.KEYBINDING_CONTEXT_EDITOR_TEXT_FOCUS),
+	KbExpr.not(editorCommon.KEYBINDING_CONTEXT_EDITOR_TAB_MOVES_FOCUS)
+));
+
+registerCoreCommand(H.DeleteLeft, {
+	primary: KeyCode.Backspace,
+	secondary: [KeyMod.Shift | KeyCode.Backspace],
+	mac: { primary: KeyCode.Backspace, secondary: [KeyMod.Shift | KeyCode.Backspace, KeyMod.WinCtrl | KeyCode.KEY_H, KeyMod.WinCtrl | KeyCode.Backspace] }
+});
+registerCoreCommand(H.DeleteRight, {
+	primary: KeyCode.Delete,
+	mac: { primary: KeyCode.Delete, secondary: [KeyMod.WinCtrl | KeyCode.KEY_D, KeyMod.WinCtrl | KeyCode.Delete] }
+});
+registerCoreCommand(H.DeleteAllLeft, {
+	primary: null,
+	mac: { primary: KeyMod.CtrlCmd | KeyCode.Backspace }
+});
+registerCoreCommand(H.DeleteAllRight, {
+	primary: null,
+	mac: { primary: KeyMod.WinCtrl | KeyCode.KEY_K, secondary: [KeyMod.CtrlCmd | KeyCode.Delete] }
+});
+
+function registerWordCommand(handlerId: string, shift:boolean, key:KeyCode): void {
+	registerCoreCommand(handlerId, {
+		primary: getWordNavigationKB(shift, key),
+		mac: { primary: getMacWordNavigationKB(shift, key) }
+	});
+>>>>>>> origin/alex/cursorHardHome
 }
 registerCommand(new SelectAllCommand());
 

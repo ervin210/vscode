@@ -4431,8 +4431,15 @@ export var Handler = {
 	CursorPageDown: 'cursorPageDown',
 	CursorPageDownSelect: 'cursorPageDownSelect',
 
+<<<<<<< HEAD
 	CursorHome: 'cursorHome',
 	CursorHomeSelect: 'cursorHomeSelect',
+=======
+	CursorHardHome:				'_cursorHardHome',
+
+	CursorEnd:					'cursorEnd',
+	CursorEndSelect:			'cursorEndSelect',
+>>>>>>> origin/alex/cursorHardHome
 
 	CursorEnd: 'cursorEnd',
 	CursorEndSelect: 'cursorEndSelect',
